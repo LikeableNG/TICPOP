@@ -1,0 +1,42 @@
+import os
+import glob
+import warnings
+from astropy.io import fits
+from astropy import units as u
+from astropy.utils.exceptions import AstropyWarning
+from astropop.image import imcombine, processing, imarith
+from astropop.framedata import read_framedata
+from astropop.file_collection import FitsFileGroup
+
+# Silencia os avisos chatos do HIERARCH
+warnings.simplefilter('ignore', category=AstropyWarning)
+
+def reduzir_objetos(pasta_entrada, pasta_saida, master_bias):
+    """Processa as estrelas. Aqui o L.A. Cosmic é obrigatório!"""
+    print("\n[Ciência] Reduzindo Imagens dos Objetos...")
+    fg = FitsFileGroup(location=pasta_entrada, fits_ext=['.fits'])
+    obj_fg = fg.filtered({'OBJECT': 'nome_da_sua_estrela'}) # Ajuste o filtro
+    
+    arq_2d = [f for f in obj_fg.files if fits.getheader(f).get('NAXIS') == 2]
+    frames = [read_framedata(f, unit='adu', use_memmap_backend=True) for f in arq_2d]
+    gain = float(frames[0].header['GAIN']) * u.electron/u.adu
+    
+    for i, frame in enumerate(frames):
+        print(f" -> Processando estrela {i+1}/{len(frames)}", end='\r')
+        # AQUI LIGAMOS O FILTRO PESADO
+        processing.cosmics_lacosmic(frame, inplace=True)
+        processing.gain_correct(frame, gain, inplace=True)
+        
+        # Subtrai o bias, etc...
+        imarith.imarith(frame, master_bias, '-', inplace=True)
+        
+        # Salva o frame final reduzido
+        frame.write(os.path.join(pasta_saida, f"reduzido_{i:03d}.fits"), overwrite=True)
+
+
+pasta_calib = '/home/likeableng/BeACoN/arquivos_de_reducao/25jul19/raw/calib/'
+pasta_obj = '/home/likeableng/BeACoN/arquivos_de_reducao/25jul19/raw/objetos/' # Exemplo
+pasta_out_calib = '/home/likeableng/BeACoN/arquivos_de_reducao/25jul19/reduced/calib/'
+
+
+reduzir_objetos(pasta_obj, pasta_out_calib, mbias)
